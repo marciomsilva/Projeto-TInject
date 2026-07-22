@@ -1,5 +1,5 @@
 //Version_JS;Version_TInjectMin;Version_CEF4Min;
-//3.3.0.0;1.0.0.9;78.3.0
+//3.3.0.2;1.0.0.9;78.3.0
 
 function getAllGroupContacts(Contacts) {
 	SetConsoleMessage("GetAllGroupContacts", JSON.stringify(Contacts));	
@@ -718,7 +718,10 @@ window.WAPI._serializeMessageObj = (obj) => {
 	const _chat = obj['chat'] ? WAPI._serializeChatObj(obj['chat']) : {};
 
     return Object.assign(window.WAPI._serializeRawObj(obj), {
-        id: obj.id._serialized,
+        //( Gabriel Rocha - 21/07/2026
+        //id: obj.id._serialized,
+		id: obj.id.fromMe + '_' + obj.id.remote + '_' + obj.id.id, 
+		completeId: obj.id,//)
         //add 02/06/2020 mike -->
 		quotedParticipant: obj.quotedParticipant? obj.quotedParticipant._serialized ? obj.quotedParticipant._serialized : undefined : undefined,
         author: obj.author? obj.author._serialized ? obj.author._serialized : undefined : undefined,
@@ -1872,6 +1875,10 @@ function isChatMessage(message) {
 }
 
 window.WAPI.getUnreadMessages = function(includeMe, includeNotifications, use_unread_count, done) {
+	//( Gabriel Rocha - 27/04/2026
+	//Desativando a função. Agora é usada a função _newMessagesListener
+	return; //)
+	
     const chats = window.Store.Chat._models;
     let output = [];
 
@@ -2130,46 +2137,42 @@ window.WAPI._newMessagesBuffer = (sessionStorage.getItem('saved_msgs') != null) 
 window.WAPI._newMessagesDebouncer = null;
 window.WAPI._newMessagesCallbacks = [];
 
-window.Store.Msg.off('add');
+//window.Store.Msg.off('add');
 sessionStorage.removeItem('saved_msgs');
 
-window.WAPI._newMessagesListener = window.Store.Msg.on('add', (newMessage) => {
-    if (newMessage && newMessage.isNewMsg && !newMessage.isSentByMe) {
-        let message = window.WAPI.processMessageObj(newMessage, false, false);
-        if (message) {
-            window.WAPI._newMessagesQueue.push(message);
-            window.WAPI._newMessagesBuffer.push(message);
-        }
-
-        // Starts debouncer time to don t call a callback for each message if more than one message arrives
-        // in the same second
-        if (!window.WAPI._newMessagesDebouncer && window.WAPI._newMessagesQueue.length > 0) {
-            window.WAPI._newMessagesDebouncer = setTimeout(() => {
-                let queuedMessages = window.WAPI._newMessagesQueue;
-
-                window.WAPI._newMessagesDebouncer = null;
-                window.WAPI._newMessagesQueue = [];
-
-                let removeCallbacks = [];
-
-                window.WAPI._newMessagesCallbacks.forEach(function(callbackObj) {
-                    if (callbackObj.callback !== undefined) {
-                        callbackObj.callback(queuedMessages);
-                    }
-                    if (callbackObj.rmAfterUse === true) {
-                        removeCallbacks.push(callbackObj);
-                    }
-                });
-
-                // Remove removable callbacks.
-                removeCallbacks.forEach(function(rmCallbackObj) {
-                    let callbackIndex = window.WAPI._newMessagesCallbacks.indexOf(rmCallbackObj);
-                    window.WAPI._newMessagesCallbacks.splice(callbackIndex, 1);
-                });
-            }, 1000);
-        }
-    }
-});
+window.WAPI._newMessagesListener = window.Store.Msg.on('add', async (newMessage) => {		
+	if (newMessage && newMessage.isNewMsg) {
+		
+	  let message = await window.WAPI.processMessageObj(
+		newMessage,
+		true,
+		true
+	  );	
+			  
+	  if (message) {  
+		  
+		if (!message.type) {
+			return;
+		}
+			
+		const messageGroup = await WAPI.getChatById(message.chatId);
+		
+		if (messageGroup.id._serialized.includes('@lid')) {
+			messageGroup.id = WAPI.extractRealNumberFromContact(messageGroup.contact);
+		}
+		
+		messageGroup.messages = [];
+		
+		messageGroup.messages.push(message);
+		
+		let data = [];
+		data.push(messageGroup);
+			
+		SetConsoleMessage("getUnreadMessages", JSON.stringify(data));
+	  }
+	}
+  }
+);
 
 window.WAPI._unloadInform = (event) => {
     // Save in the buffer the ungot unreaded messages
